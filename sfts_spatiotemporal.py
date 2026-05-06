@@ -111,10 +111,10 @@ def get_tick_density(_gdf):
 def get_kma_forecast(_gdf, days=14):
     """14일 일별 기온·습도·강수 (모의)"""
     rng = np.random.default_rng(123)
-    base_date = datetime.now().date()
+    base_date = pd.Timestamp(datetime.now().date())
     rows = []
     for d in range(days):
-        date = base_date + timedelta(days=d)
+        date = base_date + pd.Timedelta(days=d)
         for _, region in _gdf.iterrows():
             # 5월 제주 평균 18-22°C, RH 70%
             T = 19.5 + 2.5 * np.sin(d * 0.35) + rng.normal(0, 1.2)
@@ -130,7 +130,9 @@ def get_kma_forecast(_gdf, days=14):
                 "humidity": round(min(100, max(40, RH)), 1),
                 "precipitation": round(P, 1),
             })
-    return pd.DataFrame(rows)
+    df = pd.DataFrame(rows)
+    df["date"] = pd.to_datetime(df["date"])
+    return df
 
 
 # ─────────────────────────────────────────────
@@ -290,8 +292,13 @@ with col_map:
     gdf_today["lambda_fmt"] = gdf_today["lambda"].round(3)
     gdf_today["tick_density_fmt"] = gdf_today["tick_density"].round(2)
 
+    # JSON 직렬화: datetime.date 등 직렬화 불가 컬럼 제거 + Timestamp는 ISO 문자열로
+    gdf_for_map = gdf_today.drop(columns=["date"], errors="ignore").copy()
+    for col in gdf_for_map.select_dtypes(include=["datetime64[ns]", "datetime64"]).columns:
+        gdf_for_map[col] = gdf_for_map[col].astype(str)
+
     folium.GeoJson(
-        json.loads(gdf_today.to_json()),
+        json.loads(gdf_for_map.to_json()),
         style_function=style_fn,
         tooltip=folium.GeoJsonTooltip(
             fields=["region_name", "tier", "lambda_fmt", "ref_temperature", "ref_humidity"],
